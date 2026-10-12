@@ -1,10 +1,10 @@
 import type { PageServerLoad, Actions } from './$types';
-
+import { env } from 'cloudflare:workers';
 export const load: PageServerLoad = async ({ platform }) => {
-	if (!platform?.env?.DB) return { lists: [] };
+	if (!env.DB) return { lists: [] };
 
 	try {
-		const listsRes = await platform.env.DB.prepare(`
+		const listsRes = await env.DB.prepare(`
 			SELECT l.id, l.name, l.description, l.created_at,
 				COUNT(li.tmdb_id) as item_count
 			FROM lists l
@@ -18,7 +18,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 		// Fetch up to 7 posters to enable smooth left-slide peek
 		const enrichedLists = await Promise.all(
 			lists.map(async (list: any) => {
-				const postersRes = await platform.env!.DB.prepare(`
+				const postersRes = await env.DB.prepare(`
 					SELECT poster_path FROM list_items
 					WHERE list_id = ? AND poster_path IS NOT NULL
 					ORDER BY added_at DESC
@@ -47,12 +47,12 @@ export const actions: Actions = {
 		const name = (formData.get('name') as string)?.trim();
 		const description = (formData.get('description') as string)?.trim() || '';
 
-		if (!platform?.env?.DB || !name) return { success: false };
+		if (!env.DB || !name) return { success: false };
 
 		const listId = crypto.randomUUID();
 
 		try {
-			await platform.env.DB.prepare('INSERT INTO lists (id, name, description) VALUES (?, ?, ?)')
+			await env.DB.prepare('INSERT INTO lists (id, name, description) VALUES (?, ?, ?)')
 				.bind(listId, name, description)
 				.run();
 			return { success: true };
@@ -66,10 +66,10 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const id = formData.get('id') as string;
 
-		if (!platform?.env?.DB || !id) return { success: false };
+		if (!env.DB || !id) return { success: false };
 
 		try {
-			await platform.env.DB.prepare('DELETE FROM lists WHERE id = ?').bind(id).run();
+			await env.DB.prepare('DELETE FROM lists WHERE id = ?').bind(id).run();
 			return { success: true };
 		} catch (err) {
 			console.error(err);

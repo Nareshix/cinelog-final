@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { TMDB_TOKEN } from '$app/env/private';
+import { env } from 'cloudflare:workers';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, fetch, platform }) => {
@@ -12,8 +13,8 @@ export const load: PageServerLoad = async ({ params, fetch, platform }) => {
 	try {
 		// 1. Fetch user's watched status, personal ratings, and liked hearts from SQLite
 		let userLogMap = new Map<string, { watched: number; rating: number; liked: number }>();
-		if (platform?.env?.DB) {
-			const logsRes = await platform.env.DB.prepare(
+		if (env.DB) {
+			const logsRes = await env.DB.prepare(
 				'SELECT tmdb_id, media_type, watched, rating, liked FROM logs'
 			).all();
 			(logsRes.results || []).forEach((l: any) => {

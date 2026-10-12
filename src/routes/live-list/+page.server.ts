@@ -1,11 +1,12 @@
 import { TMDB_TOKEN } from '$app/env/private';
+import { env } from 'cloudflare:workers';
 import type { PageServerLoad, Actions } from './$types';
 
 export const load: PageServerLoad = async ({ platform, fetch }) => {
-	if (!platform?.env?.DB) return { entities: [] };
+	if (!env.DB) return { entities: [] };
 
 	try {
-		const res = await platform.env.DB.prepare(
+		const res = await env.DB.prepare(
 			'SELECT * FROM starred_entities ORDER BY starred_at DESC'
 		).all();
 
@@ -19,7 +20,7 @@ export const load: PageServerLoad = async ({ platform, fetch }) => {
 		}>;
 
 		// Fetch all user watched titles from logs
-		const watchedLogs = await platform.env.DB.prepare(
+		const watchedLogs = await env.DB.prepare(
 			'SELECT tmdb_id, media_type FROM logs WHERE watched = 1'
 		).all();
 		const watchedSet = new Set(
@@ -105,9 +106,9 @@ export const actions: Actions = {
 	unstar: async ({ platform, request }) => {
 		const formData = await request.formData();
 		const id = formData.get('id') as string;
-		if (!platform?.env?.DB || !id) return { success: false };
+		if (!env.DB || !id) return { success: false };
 		try {
-			await platform.env.DB.prepare('DELETE FROM starred_entities WHERE id = ?').bind(id).run();
+			await env.DB.prepare('DELETE FROM starred_entities WHERE id = ?').bind(id).run();
 			return { success: true };
 		} catch (e) {
 			console.error(e);

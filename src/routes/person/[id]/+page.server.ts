@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { TMDB_TOKEN } from '$app/env/private';
 import type { PageServerLoad, Actions } from './$types';
+import { env } from 'cloudflare:workers';
 
 export const load: PageServerLoad = async ({ params, fetch, platform }) => {
 	const { id } = params;
@@ -20,8 +21,8 @@ export const load: PageServerLoad = async ({ params, fetch, platform }) => {
 		const data = await res.json();
 
 		let isStarred = false;
-		if (platform?.env?.DB) {
-			const check = await platform.env.DB.prepare(
+		if (env.DB) {
+			const check = await env.DB.prepare(
 				'SELECT id FROM starred_entities WHERE id = ?'
 			)
 				.bind(`person_${id}`)
@@ -45,14 +46,14 @@ export const actions: Actions = {
 		const subtitle = (formData.get('subtitle') as string) || 'Artist';
 		const isStarred = formData.get('is_starred') === 'true';
 
-		if (!platform?.env?.DB) return { success: false };
+		if (!env.DB) return { success: false };
 
 		const entityId = `person_${id}`;
 		try {
 			if (isStarred) {
-				await platform.env.DB.prepare('DELETE FROM starred_entities WHERE id = ?').bind(entityId).run();
+				await env.DB.prepare('DELETE FROM starred_entities WHERE id = ?').bind(entityId).run();
 			} else {
-				await platform.env.DB.prepare(`
+				await env.DB.prepare(`
 					INSERT INTO starred_entities (id, tmdb_id, type, name, image_path, subtitle)
 					VALUES (?, ?, 'person', ?, ?, ?)
 				`).bind(entityId, Number(id), name, image_path, subtitle).run();

@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { env } from 'cloudflare:workers';
 import { TMDB_TOKEN } from '$app/env/private';
 import type { PageServerLoad, Actions } from './$types';
 
@@ -30,8 +31,8 @@ export const load: PageServerLoad = async ({ params, fetch, platform }) => {
 		const initialTitles = (discoverData.results || []).map((t: any) => ({ ...t, media_type: 'movie' }));
 
 		let isStarred = false;
-		if (platform?.env?.DB) {
-			const check = await platform.env.DB.prepare('SELECT id FROM starred_entities WHERE id = ?').bind(`company_${id}`).first();
+		if (env.DB) {
+			const check = await env.DB.prepare('SELECT id FROM starred_entities WHERE id = ?').bind(`company_${id}`).first();
 			isStarred = !!check;
 		}
 
@@ -57,14 +58,14 @@ export const actions: Actions = {
 		const subtitle = (formData.get('subtitle') as string) || 'Production Studio';
 		const isStarred = formData.get('is_starred') === 'true';
 
-		if (!platform?.env?.DB) return { success: false };
+		if (!env.DB) return { success: false };
 
 		const entityId = `company_${id}`;
 		try {
 			if (isStarred) {
-				await platform.env.DB.prepare('DELETE FROM starred_entities WHERE id = ?').bind(entityId).run();
+				await env.DB.prepare('DELETE FROM starred_entities WHERE id = ?').bind(entityId).run();
 			} else {
-				await platform.env.DB.prepare(`
+				await env.DB.prepare(`
 					INSERT INTO starred_entities (id, tmdb_id, type, name, image_path, subtitle)
 					VALUES (?, ?, 'company', ?, ?, ?)
 				`).bind(entityId, Number(id), name, image_path, subtitle).run();

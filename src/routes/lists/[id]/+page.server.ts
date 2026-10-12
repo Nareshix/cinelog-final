@@ -1,22 +1,23 @@
 import { error } from '@sveltejs/kit';
+import { env } from 'cloudflare:workers';
 import type { PageServerLoad, Actions } from './$types';
 
 export const load: PageServerLoad = async ({ params, platform }) => {
 	const { id } = params;
 
-	if (!platform?.env?.DB) {
+	if (!env.DB) {
 		throw error(500, 'Database not available');
 	}
 
 	try {
-		const list = await platform.env.DB.prepare('SELECT * FROM lists WHERE id = ?')
+		const list = await env.DB.prepare('SELECT * FROM lists WHERE id = ?')
 			.bind(id)
 			.first();
 
 		if (!list) throw error(404, 'List not found');
 
 		// Cross-reference with user logs to fetch watched status, personal ratings, hearts, and TMDB metrics
-		const itemsRes = await platform.env.DB.prepare(`
+		const itemsRes = await env.DB.prepare(`
 			SELECT li.*,
 				CASE WHEN l.watched = 1 THEN 1 ELSE 0 END as user_watched,
 				l.rating as user_rating,
@@ -54,10 +55,10 @@ export const actions: Actions = {
 		const name = (formData.get('name') as string)?.trim();
 		const description = (formData.get('description') as string)?.trim() || '';
 
-		if (!platform?.env?.DB || !name) return { success: false };
+		if (!env.DB || !name) return { success: false };
 
 		try {
-			await platform.env.DB.prepare('UPDATE lists SET name = ?, description = ? WHERE id = ?')
+			await env.DB.prepare('UPDATE lists SET name = ?, description = ? WHERE id = ?')
 				.bind(name, description, id)
 				.run();
 			return { success: true };
@@ -75,10 +76,10 @@ export const actions: Actions = {
 		const title = formData.get('title') as string;
 		const poster_path = (formData.get('poster_path') as string) || null;
 
-		if (!platform?.env?.DB || !tmdb_id) return { success: false };
+		if (!env.DB || !tmdb_id) return { success: false };
 
 		try {
-			await platform.env.DB.prepare(`
+			await env.DB.prepare(`
 				INSERT INTO list_items (list_id, tmdb_id, media_type, title, poster_path)
 				VALUES (?, ?, ?, ?, ?)
 				ON CONFLICT(list_id, tmdb_id, media_type) DO NOTHING
@@ -98,10 +99,10 @@ export const actions: Actions = {
 		const tmdb_id = Number(formData.get('tmdb_id'));
 		const media_type = formData.get('media_type') as string;
 
-		if (!platform?.env?.DB || !tmdb_id) return { success: false };
+		if (!env.DB || !tmdb_id) return { success: false };
 
 		try {
-			await platform.env.DB.prepare('DELETE FROM list_items WHERE list_id = ? AND tmdb_id = ? AND media_type = ?')
+			await env.DB.prepare('DELETE FROM list_items WHERE list_id = ? AND tmdb_id = ? AND media_type = ?')
 				.bind(id, tmdb_id, media_type)
 				.run();
 			return { success: true };

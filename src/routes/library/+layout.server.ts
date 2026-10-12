@@ -1,28 +1,17 @@
+import { env } from 'cloudflare:workers';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ platform }) => {
-	if (!platform?.env?.DB) {
+export const load: LayoutServerLoad = async () => {
+	if (!env.DB) {
 		return { logs: [], stats: { watched: 0, watchlist: 0, liked: 0, avgRating: '0.0' } };
 	}
 
 	try {
-		const result = await platform.env.DB.prepare(
+		const result = await env.DB.prepare(
 			'SELECT * FROM logs ORDER BY updated_at DESC'
 		).all();
 
-		const logs = (result.results || []) as Array<{
-			id: string;
-			tmdb_id: number;
-			media_type: 'movie' | 'tv';
-			title: string;
-			poster_path: string | null;
-			watched: number;
-			liked: number;
-			watchlist: number;
-			rating: number;
-			notes: string;
-			updated_at: string;
-		}>;
+		const logs = (result.results || []) as any[];
 
 		const watchedCount = logs.filter((l) => l.watched === 1).length;
 		const watchlistCount = logs.filter((l) => l.watchlist === 1).length;
@@ -43,7 +32,7 @@ export const load: LayoutServerLoad = async ({ platform }) => {
 			}
 		};
 	} catch (err) {
-		console.error('Error in library layout load:', err);
+		console.error('Error loading library:', err);
 		return { logs: [], stats: { watched: 0, watchlist: 0, liked: 0, avgRating: '0.0' } };
 	}
 };
