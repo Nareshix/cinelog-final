@@ -19,6 +19,7 @@
 
 	type ViewTab = 'all' | 'watched' | 'unwatched';
 	let activeTab = $state<ViewTab>('all');
+	let mediaFilter = $state<'all' | 'movie' | 'tv'>('all'); // Filter by Movie vs TV
 	let showUnreleased = $state(false); // OFF by default
 	let likedOnly = $state(false);
 	let isSyncing = $state(false);
@@ -54,17 +55,29 @@
 	// Displayed pool depends on whether "Show Unreleased" is toggled
 	const pool = $derived(showUnreleased ? titles : releasedTitles);
 
-	const displayedTitles = $derived.by(() => {
+	// Base pool after Tab selection
+	const currentTabPool = $derived.by(() => {
 		let list = [...pool];
-
-		// Tab filter
 		if (activeTab === 'watched') list = list.filter((t: any) => t.user_watched === 1);
 		if (activeTab === 'unwatched') list = list.filter((t: any) => t.user_watched === 0);
+		return list;
+	});
 
-		// Liked filter
+	// Dynamic counts for Movie vs TV based on current tab
+	const movieCount = $derived(currentTabPool.filter((t: any) => t.media_type === 'movie').length);
+	const tvCount = $derived(currentTabPool.filter((t: any) => t.media_type === 'tv').length);
+
+	const displayedTitles = $derived.by(() => {
+		let list = [...currentTabPool];
+
+		// 1. Format filter (Movie vs TV)
+		if (mediaFilter === 'movie') list = list.filter((t: any) => t.media_type === 'movie');
+		if (mediaFilter === 'tv') list = list.filter((t: any) => t.media_type === 'tv');
+
+		// 2. Liked filter
 		if (likedOnly) list = list.filter((t: any) => t.user_liked === 1);
 
-		// Sorting
+		// 3. Sorting
 		if (sortBy === 'rating-desc') {
 			list.sort((a, b) => (b.user_rating || 0) - (a.user_rating || 0));
 		} else if (sortBy === 'rating-asc') {
@@ -178,81 +191,110 @@
 		</div>
 	</div>
 
-	<!-- Controls: Tabs on the left, Filters + Sort on the right -->
-	<div
-		class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-3"
-	>
-		<!-- Left: View Tabs (ONLY All, Watched, Unwatched) -->
-		<div class="flex items-center gap-1.5 flex-wrap">
-			<Button
-				variant={activeTab === 'all' ? 'secondary' : 'ghost'}
-				size="sm"
-				onclick={() => (activeTab = 'all')}
-			>
-				All ({pool.length})
-			</Button>
-			<Button
-				variant={activeTab === 'watched' ? 'secondary' : 'ghost'}
-				size="sm"
-				onclick={() => (activeTab = 'watched')}
-			>
-				Watched ({watchedCount})
-			</Button>
-			<Button
-				variant={activeTab === 'unwatched' ? 'secondary' : 'ghost'}
-				size="sm"
-				onclick={() => (activeTab = 'unwatched')}
-			>
-				Unwatched ({pool.length - watchedCount})
-			</Button>
+	<!-- Controls: Tabs, Format Filters & Sorting -->
+	<div class="space-y-3.5 border-b border-border pb-4">
+		<!-- Row 1: View Tabs (All, Watched, Unwatched) & Quick Toggles -->
+		<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+			<!-- Left: View Tabs -->
+			<div class="flex items-center gap-1.5 flex-wrap">
+				<Button
+					variant={activeTab === 'all' ? 'secondary' : 'ghost'}
+					size="sm"
+					onclick={() => (activeTab = 'all')}
+				>
+					All ({pool.length})
+				</Button>
+				<Button
+					variant={activeTab === 'watched' ? 'secondary' : 'ghost'}
+					size="sm"
+					onclick={() => (activeTab = 'watched')}
+				>
+					Watched ({watchedCount})
+				</Button>
+				<Button
+					variant={activeTab === 'unwatched' ? 'secondary' : 'ghost'}
+					size="sm"
+					onclick={() => (activeTab = 'unwatched')}
+				>
+					Unwatched ({pool.length - watchedCount})
+				</Button>
+			</div>
+
+			<!-- Right: Liked Button + Show/Hide Unreleased Toggle + Sort Dropdown -->
+			<div class="flex items-center gap-2.5 self-end sm:self-auto flex-wrap">
+				<Button
+					variant={likedOnly ? 'secondary' : 'ghost'}
+					size="sm"
+					onclick={() => (likedOnly = !likedOnly)}
+					class="gap-1.5 text-xs cursor-pointer {likedOnly ? 'border border-rose-500/30' : ''}"
+				>
+					<Heart
+						class="w-3.5 h-3.5 {likedOnly
+							? 'fill-rose-500 text-rose-500'
+							: 'text-muted-foreground'}"
+					/>
+					Liked
+				</Button>
+
+				<!-- Toggle: Show/Hide Unreleased -->
+				{#if unreleasedCount > 0}
+					<Button
+						variant={showUnreleased ? 'secondary' : 'outline'}
+						size="sm"
+						onclick={() => (showUnreleased = !showUnreleased)}
+						class="text-xs cursor-pointer {showUnreleased ? 'border-amber-500/40 text-amber-500' : ''}"
+					>
+						{showUnreleased ? 'Hide Unreleased' : 'Show Unreleased'}
+					</Button>
+				{/if}
+
+				<div class="flex items-center gap-1.5">
+					<span class="text-xs text-muted-foreground font-medium">Sort:</span>
+					<div class="relative inline-flex items-center">
+						<select
+							bind:value={sortBy}
+							class="appearance-none bg-card border border-input rounded-md pl-3 pr-8 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+						>
+							<option value="recent">Recently Released</option>
+							<option value="rating-desc">My Rating: High to Low</option>
+							<option value="rating-asc">My Rating: Low to High</option>
+							<option value="community-desc">Highest Community Rating</option>
+							<option value="popularity-desc">Most Popular</option>
+							<option value="title">Alphabetical (A-Z)</option>
+						</select>
+						<ChevronDown
+							class="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+						/>
+					</div>
+				</div>
+			</div>
 		</div>
 
-		<!-- Right: Liked Button + Show/Hide Unreleased Toggle + Sort Dropdown -->
-		<div class="flex items-center gap-2.5 self-end sm:self-auto flex-wrap">
-			<Button
-				variant={likedOnly ? 'secondary' : 'ghost'}
-				size="sm"
-				onclick={() => (likedOnly = !likedOnly)}
-				class="gap-1.5 text-xs cursor-pointer {likedOnly ? 'border border-rose-500/30' : ''}"
-			>
-				<Heart
-					class="w-3.5 h-3.5 {likedOnly
-						? 'fill-rose-500 text-rose-500'
-						: 'text-muted-foreground'}"
-				/>
-				Liked
-			</Button>
-
-			<!-- Toggle: Show/Hide Unreleased (OFF by default) -->
-			{#if unreleasedCount > 0}
+		<!-- Row 2: Format Filter (Movies vs TV Series) -->
+		<div class="flex items-center gap-2 pt-1">
+			<span class="text-xs text-muted-foreground font-medium">Format:</span>
+			<div class="flex items-center gap-1">
 				<Button
-					variant={showUnreleased ? 'secondary' : 'outline'}
-					size="sm"
-					onclick={() => (showUnreleased = !showUnreleased)}
-					class="text-xs cursor-pointer {showUnreleased ? 'border-amber-500/40 text-amber-500' : ''}"
+					variant={mediaFilter === 'all' ? 'secondary' : 'ghost'}
+					size="xs"
+					onclick={() => (mediaFilter = 'all')}
 				>
-					{showUnreleased ? 'Hide Unreleased' : 'Show Unreleased'}
+					All Formats ({currentTabPool.length})
 				</Button>
-			{/if}
-
-			<div class="flex items-center gap-1.5">
-				<span class="text-xs text-muted-foreground font-medium">Sort:</span>
-				<div class="relative inline-flex items-center">
-					<select
-						bind:value={sortBy}
-						class="appearance-none bg-card border border-input rounded-md pl-3 pr-8 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
-					>
-						<option value="recent">Recently Released</option>
-						<option value="rating-desc">My Rating: High to Low</option>
-						<option value="rating-asc">My Rating: Low to High</option>
-						<option value="community-desc">Highest Community Rating</option>
-						<option value="popularity-desc">Most Popular</option>
-						<option value="title">Alphabetical (A-Z)</option>
-					</select>
-					<ChevronDown
-						class="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-					/>
-				</div>
+				<Button
+					variant={mediaFilter === 'movie' ? 'secondary' : 'ghost'}
+					size="xs"
+					onclick={() => (mediaFilter = 'movie')}
+				>
+					Movies ({movieCount})
+				</Button>
+				<Button
+					variant={mediaFilter === 'tv' ? 'secondary' : 'ghost'}
+					size="xs"
+					onclick={() => (mediaFilter = 'tv')}
+				>
+					TV Series ({tvCount})
+				</Button>
 			</div>
 		</div>
 	</div>
@@ -266,7 +308,7 @@
 					<Card.Root
 						class="overflow-hidden transition hover:border-foreground/30 flex flex-col h-full bg-card border-border pt-0 gap-0"
 					>
-						<!-- Poster (Clean, no floating badges) -->
+						<!-- Poster -->
 						<div class="relative aspect-2/3 bg-muted w-full overflow-hidden">
 							{#if item.poster_path}
 								<img
@@ -294,7 +336,7 @@
 							</h3>
 
 							<div class="flex items-center justify-between text-xs pt-1">
-								<!-- PILLS ROW AT BOTTOM: [FILM] [UNRELEASED] [WATCHED] -->
+								<!-- PILLS ROW AT BOTTOM: [FILM/TV] [UNRELEASED] [WATCHED] -->
 								<div class="flex items-center gap-1.5 flex-wrap">
 									<Badge variant="outline" class="text-[10px] uppercase font-medium">
 										{item.media_type === 'movie' ? 'Film' : 'TV'}
