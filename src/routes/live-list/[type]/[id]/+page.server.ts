@@ -75,8 +75,8 @@ export const load: PageServerLoad = async ({ params, fetch, platform }) => {
 			});
 
 			titles = Array.from(dedup.values()).sort((a, b) => b.release_date.localeCompare(a.release_date));
-		} else {
-			// Company
+} else {
+			// Company / Studio
 			const cRes = await fetch(`https://api.themoviedb.org/3/company/${id}`, {
 				headers: { Authorization: `Bearer ${TMDB_TOKEN}`, accept: 'application/json' }
 			});
@@ -87,13 +87,22 @@ export const load: PageServerLoad = async ({ params, fetch, platform }) => {
 			entityImage = cData.logo_path;
 			entitySubtitle = cData.origin_country || 'Studio';
 
-			const discRes = await fetch(
-				`https://api.themoviedb.org/3/discover/movie?with_companies=${id}&without_genres=10767,10763,10764,99&sort_by=primary_release_date.desc&page=1`,
-				{ headers: { Authorization: `Bearer ${TMDB_TOKEN}`, accept: 'application/json' } }
-			);
-			const discData = discRes.ok ? await discRes.json() : { results: [] };
+			// Fetch BOTH Movies AND TV series produced by this company
+			const [movieRes, tvRes] = await Promise.all([
+				fetch(
+					`https://api.themoviedb.org/3/discover/movie?with_companies=${id}&without_genres=10767,10763,10764,99&sort_by=primary_release_date.desc&page=1`,
+					{ headers: { Authorization: `Bearer ${TMDB_TOKEN}`, accept: 'application/json' } }
+				),
+				fetch(
+					`https://api.themoviedb.org/3/discover/tv?with_companies=${id}&without_genres=10767,10763,10764,99&sort_by=first_air_date.desc&page=1`,
+					{ headers: { Authorization: `Bearer ${TMDB_TOKEN}`, accept: 'application/json' } }
+				)
+			]);
 
-			titles = (discData.results || []).map((m: any) => {
+			const movieData = movieRes.ok ? await movieRes.json() : { results: [] };
+			const tvData = tvRes.ok ? await tvRes.json() : { results: [] };
+
+			const movieTitles = (movieData.results || []).map((m: any) => {
 				const key = `movie_${m.id}`;
 				const userLog = userLogMap.get(key);
 				return {
@@ -109,8 +118,29 @@ export const load: PageServerLoad = async ({ params, fetch, platform }) => {
 					user_liked: userLog?.liked === 1 ? 1 : 0
 				};
 			});
-		}
 
+			const tvTitles = (tvData.results || []).map((t: any) => {
+				const key = `tv_${t.id}`;
+				const userLog = userLogMap.get(key);
+				return {
+					id: t.id,
+					media_type: 'tv',
+					title: t.name,
+					poster_path: t.poster_path,
+					release_date: t.first_air_date || '',
+					vote_average: t.vote_average || 0,
+					popularity: t.popularity || 0,
+					user_watched: userLog?.watched === 1 ? 1 : 0,
+					user_rating: userLog?.rating || 0,
+					user_liked: userLog?.liked === 1 ? 1 : 0
+				};
+			});
+
+			// Merge movies & TV shows, sorting by newest release date
+			titles = [...movieTitles, ...tvTitles].sort((a, b) =>
+				(b.release_date || '').localeCompare(a.release_date || '')
+			);
+		}
 		const watchedCount = titles.filter((t) => t.user_watched === 1).length;
 		const percentage = titles.length > 0 ? Math.round((watchedCount / titles.length) * 100) : 0;
 

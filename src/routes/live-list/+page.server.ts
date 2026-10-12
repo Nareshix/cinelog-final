@@ -2,7 +2,7 @@ import { TMDB_TOKEN } from '$app/env/private';
 import { env } from 'cloudflare:workers';
 import type { PageServerLoad, Actions } from './$types';
 
-export const load: PageServerLoad = async ({ platform, fetch }) => {
+export const load: PageServerLoad = async ({ fetch }) => {
 	if (!env.DB) return { entities: [] };
 
 	try {
@@ -65,28 +65,38 @@ export const load: PageServerLoad = async ({ platform, fetch }) => {
 							};
 						}
 					} else {
-						// Studio
-						const cRes = await fetch(
-							`https://api.themoviedb.org/3/discover/movie?with_companies=${entity.tmdb_id}&without_genres=10767,10763,10764,99&sort_by=primary_release_date.desc&page=1`,
-							{ headers: { Authorization: `Bearer ${TMDB_TOKEN}`, accept: 'application/json' } }
-						);
+						// Studio (Fetches BOTH Movies AND TV series)
+						const [mRes, tvRes] = await Promise.all([
+							fetch(
+								`https://api.themoviedb.org/3/discover/movie?with_companies=${entity.tmdb_id}&without_genres=10767,10763,10764,99&sort_by=primary_release_date.desc&page=1`,
+								{ headers: { Authorization: `Bearer ${TMDB_TOKEN}`, accept: 'application/json' } }
+							),
+							fetch(
+								`https://api.themoviedb.org/3/discover/tv?with_companies=${entity.tmdb_id}&without_genres=10767,10763,10764,99&sort_by=first_air_date.desc&page=1`,
+								{ headers: { Authorization: `Bearer ${TMDB_TOKEN}`, accept: 'application/json' } }
+							)
+						]);
 
-						if (cRes.ok) {
-							const cData = await cRes.json();
-							const titles = cData.results || [];
-							const posters = titles.slice(0, 5).map((m: any) => m.poster_path);
-							const watchedCount = titles.filter((m: any) => watchedSet.has(`movie_${m.id}`)).length;
-							const total = cData.total_results || 0;
-							const percentage = total > 0 ? Math.round((watchedCount / total) * 100) : 0;
+						const mData = mRes.ok ? await mRes.json() : { results: [], total_results: 0 };
+						const tvData = tvRes.ok ? await tvRes.json() : { results: [], total_results: 0 };
 
-							return {
-								...entity,
-								posters,
-								item_count: total,
-								watched_count: watchedCount,
-								percentage
-							};
-						}
+						const allTitles = [
+							...(mData.results || []).map((m: any) => ({ ...m, media_type: 'movie', date: m.release_date })),
+							...(tvData.results || []).map((t: any) => ({ ...t, media_type: 'tv', date: t.first_air_date }))
+						].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+						const posters = allTitles.slice(0, 5).map((x: any) => x.poster_path);
+						const watchedCount = allTitles.filter((x: any) => watchedSet.has(`${x.media_type}_${x.id}`)).length;
+						const total = (mData.total_results || 0) + (tvData.total_results || 0);
+						const percentage = total > 0 ? Math.round((watchedCount / total) * 100) : 0;
+
+						return {
+							...entity,
+							posters,
+							item_count: total,
+							watched_count: watchedCount,
+							percentage
+						};
 					}
 				} catch (err) {
 					console.error(err);
@@ -103,7 +113,7 @@ export const load: PageServerLoad = async ({ platform, fetch }) => {
 };
 
 export const actions: Actions = {
-	unstar: async ({ platform, request }) => {
+	unstar: async ({ request }) => {
 		const formData = await request.formData();
 		const id = formData.get('id') as string;
 		if (!env.DB || !id) return { success: false };
