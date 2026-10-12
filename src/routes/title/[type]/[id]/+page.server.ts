@@ -5,28 +5,54 @@ import type { PageServerLoad, Actions } from './$types';
 
 export const load: PageServerLoad = async ({ params, fetch }) => {
 	const { type, id } = params;
+	const key = `${type}_${id}`;
 
 	if (type !== 'movie' && type !== 'tv') {
 		throw error(404, 'Invalid media type');
 	}
 
 	try {
-		const res = await fetch(
-			`https://api.themoviedb.org/3/${type}/${id}?append_to_response=credits,recommendations,external_ids&language=en-US`,
-			{
-				headers: {
-					Authorization: `Bearer ${TMDB_TOKEN}`,
-					accept: 'application/json'
-				}
-			}
-		);
+		let item: any = null;
 
-		if (!res.ok) {
-			throw error(res.status, 'Title not found on TMDB');
+		// 1. Check permanent media_vault in SQLite D1
+		if (env.DB) {
+			const existing = await env.DB.prepare('SELECT data FROM media_vault WHERE id = ?')
+				.bind(key)
+				.first<{ data: string }>();
+
+			if (existing?.data) {
+				item = JSON.parse(existing.data); // Loaded from SQLite! (0 TMDB calls)
+			}
 		}
 
-		const data = await res.json();
-		const logId = `${type}_${id}`;
+		// 2. First time ever? Fetch from TMDB once, then save permanently in media_vault
+		if (!item) {
+			const res = await fetch(
+				`https://api.themoviedb.org/3/${type}/${id}?append_to_response=credits,recommendations,external_ids&language=en-US`,
+				{
+					headers: {
+						Authorization: `Bearer ${TMDB_TOKEN}`,
+						accept: 'application/json'
+					}
+				}
+			);
+
+			if (!res.ok) throw error(res.status, 'Title not found on TMDB');
+			item = await res.json();
+
+			if (env.DB) {
+				try {
+					await env.DB.prepare('INSERT OR REPLACE INTO media_vault (id, data) VALUES (?, ?)')
+						.bind(key, JSON.stringify(item))
+						.run();
+				} catch (err) {
+					console.warn('Could not save to media_vault:', err);
+				}
+			}
+		}
+
+		// 3. Load user rating, notes, and custom lists from SQLite
+		const logId = key;
 		let userLog = null;
 		let userLists: Array<{ id: string; name: string; inList: boolean }> = [];
 
@@ -58,7 +84,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 		}
 
 		return {
-			item: data,
+			item,
 			type,
 			userLog,
 			userLists
